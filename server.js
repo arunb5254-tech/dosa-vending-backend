@@ -1,21 +1,26 @@
 const express = require("express");
 const Razorpay = require("razorpay");
 const cors = require("cors");
-const axios = require("axios");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+/* Razorpay Keys */
+
 const razorpay = new Razorpay({
   key_id: "rzp_test_SGW9dU8nTUa71m",
   key_secret: "cOpxtgFaFxuIDTAdBzZVjzNo"
 });
 
-const ESP_IP = "192.168.137.36";
+/* Order Storage */
 
 let orders = {};
+
+/* Machine State */
+
+let machineStatus = "idle";
 
 /* CREATE PAYMENT LINK */
 
@@ -26,10 +31,16 @@ app.post("/create-order", async (req, res) => {
     const amount = req.body.amount;
 
     const paymentLink = await razorpay.paymentLink.create({
+
       amount: amount * 100,
       currency: "INR",
-      description: "Dosa Machine",
-      notify: { sms: false, email: false }
+      description: "Smart Dosa Machine",
+
+      notify: {
+        sms: false,
+        email: false
+      }
+
     });
 
     orders[paymentLink.id] = "pending";
@@ -39,17 +50,17 @@ app.post("/create-order", async (req, res) => {
       qr: paymentLink.short_url
     });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.log(error);
-    res.status(500).send("Order error");
+    console.log(err);
+    res.status(500).send("Payment link error");
 
   }
 
 });
 
 
-/* CHECK PAYMENT */
+/* FLUTTER CHECK PAYMENT */
 
 app.post("/payment-status", (req, res) => {
 
@@ -62,9 +73,9 @@ app.post("/payment-status", (req, res) => {
 });
 
 
-/* WEBHOOK FROM RAZORPAY */
+/* RAZORPAY WEBHOOK */
 
-app.post("/webhook", async (req, res) => {
+app.post("/webhook", (req, res) => {
 
   const event = req.body.event;
 
@@ -72,23 +83,16 @@ app.post("/webhook", async (req, res) => {
 
   if (event === "payment_link.paid") {
 
-    const orderId = req.body.payload.payment_link.entity.id;
+    const orderId =
+      req.body.payload.payment_link.entity.id;
 
     console.log("Payment received:", orderId);
 
     orders[orderId] = "paid";
 
-    try {
+    /* trigger machine */
 
-      await axios.get(`http://${ESP_IP}/start`);
-
-      console.log("ESP triggered");
-
-    } catch (e) {
-
-      console.log("ESP not reachable");
-
-    }
+    machineStatus = "cook";
 
   }
 
@@ -97,8 +101,27 @@ app.post("/webhook", async (req, res) => {
 });
 
 
+/* ESP CHECK MACHINE */
+
+app.get("/machine-status", (req, res) => {
+
+  if (machineStatus === "cook") {
+
+    machineStatus = "idle";
+
+    res.send("cook");
+
+  } else {
+
+    res.send("idle");
+
+  }
+
+});
+
+
 app.listen(5000, () => {
 
-  console.log("Server running");
+  console.log("Server running on port 5000");
 
 });
