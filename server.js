@@ -60,7 +60,7 @@ app.post("/payment-status", async (req, res) => {
         /* TRIGGER ESP */
 
         try {
-          await axios.get("http://192.168.137.133/start");
+          await axios.get("http://192.168.137.36/start");
         } catch (err) {
           console.log("ESP not reachable");
         }
