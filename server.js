@@ -4,6 +4,7 @@ const cors = require("cors");
 const axios = require("axios");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
@@ -16,19 +17,19 @@ const ESP_IP = "192.168.137.36";
 
 let orders = {};
 
-app.post("/create-order", async (req, res) => {
+/* CREATE PAYMENT LINK */
 
-  const amount = req.body.amount;
+app.post("/create-order", async (req, res) => {
 
   try {
 
-    const paymentLink = await razorpay.paymentLink.create({
+    const amount = req.body.amount;
 
+    const paymentLink = await razorpay.paymentLink.create({
       amount: amount * 100,
       currency: "INR",
-      description: "Dosa Vending Machine",
+      description: "Dosa Machine",
       notify: { sms: false, email: false }
-
     });
 
     orders[paymentLink.id] = "pending";
@@ -38,14 +39,17 @@ app.post("/create-order", async (req, res) => {
       qr: paymentLink.short_url
     });
 
-  } catch (err) {
+  } catch (error) {
 
-    console.log(err);
-    res.status(500).send("Error");
+    console.log(error);
+    res.status(500).send("Order error");
 
   }
 
 });
+
+
+/* CHECK PAYMENT */
 
 app.post("/payment-status", (req, res) => {
 
@@ -57,13 +61,20 @@ app.post("/payment-status", (req, res) => {
 
 });
 
-app.post("/razorpay-webhook", async (req, res) => {
+
+/* WEBHOOK FROM RAZORPAY */
+
+app.post("/webhook", async (req, res) => {
 
   const event = req.body.event;
+
+  console.log("Webhook event:", event);
 
   if (event === "payment_link.paid") {
 
     const orderId = req.body.payload.payment_link.entity.id;
+
+    console.log("Payment received:", orderId);
 
     orders[orderId] = "paid";
 
@@ -84,6 +95,7 @@ app.post("/razorpay-webhook", async (req, res) => {
   res.sendStatus(200);
 
 });
+
 
 app.listen(5000, () => {
 
