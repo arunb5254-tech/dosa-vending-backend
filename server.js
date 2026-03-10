@@ -1,135 +1,87 @@
 const express = require("express");
 const Razorpay = require("razorpay");
 const cors = require("cors");
+const bodyParser = require("body-parser");
 const axios = require("axios");
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
-
-/* =========================
-   RAZORPAY CONFIG
-========================= */
+app.use(bodyParser.json());
 
 const razorpay = new Razorpay({
   key_id: "rzp_test_SGW9dU8nTUa71m",
   key_secret: "cOpxtgFaFxuIDTAdBzZVjzNo"
 });
 
-/* =========================
-   ORDER STORAGE
-========================= */
+let payments = {};
 
-let orders = {};
-
-/* =========================
-   CREATE ORDER
-========================= */
+/* CREATE ORDER */
 
 app.post("/create-order", async (req, res) => {
 
-  try {
+  const amount = req.body.amount;
 
-    const { amount } = req.body;
+  const order = await razorpay.orders.create({
+    amount: amount * 100,
+    currency: "INR"
+  });
 
-    const order = await razorpay.orders.create({
-      amount: amount * 100,
-      currency: "INR",
-      receipt: "dosa_order"
-    });
+  const qrLink = `upi://pay?pa=razorpay@axisbank&pn=DosaMachine&am=${amount}&cu=INR`;
 
-    const paymentLink = await razorpay.paymentLink.create({
-
-      amount: amount * 100,
-      currency: "INR",
-      description: "Smart Dosa Machine",
-
-      reference_id: order.id,
-
-      notify: {
-        sms: false,
-        email: false
-      }
-
-    });
-
-    orders[order.id] = "pending";
-
-    res.json({
-      order_id: order.id,
-      qr: paymentLink.short_url
-    });
-
-  } catch (error) {
-
-    console.log(error);
-    res.status(500).send("Order failed");
-
-  }
-
-});
-
-/* =========================
-   PAYMENT STATUS
-========================= */
-
-app.post("/payment-status", (req, res) => {
-
-  const { order_id } = req.body;
-
-  const status = orders[order_id] || "pending";
+  payments[order.id] = "pending";
 
   res.json({
-    status: status
+    order_id: order.id,
+    qr: qrLink
   });
 
 });
 
-/* =========================
-   RAZORPAY WEBHOOK
-========================= */
 
-app.post("/webhook", async (req, res) => {
+/* PAYMENT STATUS */
 
-  const event = req.body.event;
+app.post("/payment-status", async (req, res) => {
 
-  if (event === "payment_link.paid") {
+  const orderId = req.body.order_id;
 
-    const orderId = req.body.payload.payment_link.entity.reference_id;
+  try {
 
-    console.log("Payment received:", orderId);
+    const paymentsList = await razorpay.orders.fetchPayments(orderId);
 
-    orders[orderId] = "paid";
+    if (paymentsList.items.length > 0) {
 
-    /* Trigger ESP8266 */
+      const status = paymentsList.items[0].status;
 
-    try {
+      if (status === "captured") {
 
-      await axios.get("http://192.168.137.133/start");
+        payments[orderId] = "paid";
 
-      console.log("ESP8266 Triggered");
+        /* TRIGGER ESP */
 
-    } catch (error) {
+        try {
+          await axios.get("http://192.168.137.133/start");
+        } catch (err) {
+          console.log("ESP not reachable");
+        }
 
-      console.log("ESP Error:", error.message);
+        return res.json({ status: "paid" });
+
+      }
 
     }
 
-  }
+    res.json({ status: "pending" });
 
-  res.sendStatus(200);
+  } catch (err) {
+
+    res.json({ status: "pending" });
+
+  }
 
 });
 
-/* =========================
-   START SERVER
-========================= */
 
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-
-  console.log("Server running on port", PORT);
-
+app.listen(5000, () => {
+  console.log("Server running on port 5000");
 });
